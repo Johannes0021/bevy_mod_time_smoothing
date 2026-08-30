@@ -42,7 +42,7 @@ pub struct TimeSmoothing {
     samples: Vec<Duration>,
     sorted_samples: Vec<Duration>,
     config: TimeSmoothingConfig,
-    value: Duration,
+    smoothed: Duration,
 }
 
 impl TimeSmoothing {
@@ -53,7 +53,7 @@ impl TimeSmoothing {
             samples: Vec::with_capacity(window_size.get()),
             sorted_samples: Vec::with_capacity(window_size.get()),
             config,
-            value: Duration::ZERO,
+            smoothed: Duration::ZERO,
         }
     }
 
@@ -84,22 +84,22 @@ impl TimeSmoothing {
             / (end - start) as u32;
 
         if self.config.time_constant == 0.0 {
-            self.value = average;
+            self.smoothed = average;
         } else {
             let delta_secs = average.as_secs_f64();
             let alpha = 1.0 - (-delta_secs / self.config.time_constant).exp();
 
-            let current = self.value.as_secs_f64();
+            let current = self.smoothed.as_secs_f64();
             let target = average.as_secs_f64();
 
-            self.value = Duration::from_secs_f64(current + (alpha * (target - current)));
+            self.smoothed = Duration::from_secs_f64(current + (alpha * (target - current)));
         }
 
-        self.value
+        self.smoothed
     }
 
     pub fn smoothed_delta(&self) -> Duration {
-        self.value
+        self.smoothed
     }
 
     pub fn raw_delta(&self) -> Duration {
