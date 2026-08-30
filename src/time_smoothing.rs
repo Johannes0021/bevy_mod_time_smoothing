@@ -1,98 +1,120 @@
+use std::num::NonZeroUsize;
+use std::time::Duration;
+
 use bevy_ecs::resource::Resource;
+
+//==================================================================================================
+// TimeSmoothingConfig
+//==================================================================================================
+
+#[derive(Debug, Clone, Copy)]
+pub struct TimeSmoothingConfig {
+    /// Number of samples used to calculate the average.
+    pub average_count: NonZeroUsize,
+    /// Number of samples ignored on each side of the sorted samples.
+    pub ignore_side_count: usize,
+    /// Controls how quickly the smoothed value reacts.
+    pub time_constant: f64,
+}
+
+impl Default for TimeSmoothingConfig {
+    fn default() -> Self {
+        Self {
+            average_count: NonZeroUsize::new(6).unwrap(),
+            ignore_side_count: 2,
+            time_constant: 0.1,
+        }
+    }
+}
+
+impl TimeSmoothingConfig {
+    pub fn window_size(&self) -> NonZeroUsize {
+        NonZeroUsize::new(self.average_count.get() + (self.ignore_side_count * 2)).unwrap()
+    }
+}
+
+//==================================================================================================
+// TimeSmoothing
+//==================================================================================================
 
 #[derive(Resource, Debug, Clone)]
 pub struct TimeSmoothing {
-    samples: Vec<f64>,
-    sorted_samples: Vec<f64>,
-    window_size: usize,
-    time_constant: f64,
-    value: f64,
+    samples: Vec<Duration>,
+    sorted_samples: Vec<Duration>,
+    config: TimeSmoothingConfig,
+    value: Duration,
 }
 
 impl TimeSmoothing {
-    /// `window_size` should be an odd number, e.g. 5 or 7.
-    /// `time_constant` controls how quickly the smoothed value reacts, e.g. 50ms or 100ms.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `window_size` is zero or even, or if `time_constant` is not greater than zero.
-    pub fn new(window_size: usize, time_constant: f64) -> Self {
-        assert!(
-            window_size > 0 && !window_size.is_multiple_of(2),
-            "window_size must be a positive odd number"
-        );
-        assert!(
-            time_constant > 0.0,
-            "time_constant must be greater than zero"
-        );
+    pub fn new(config: TimeSmoothingConfig) -> Self {
+        let window_size = config.window_size();
 
         Self {
-            samples: Vec::with_capacity(window_size),
-            sorted_samples: Vec::with_capacity(window_size),
-            window_size,
-            value: 0.0,
-            time_constant,
+            samples: Vec::with_capacity(window_size.get()),
+            sorted_samples: Vec::with_capacity(window_size.get()),
+            config,
+            value: Duration::ZERO,
         }
     }
 
-    pub fn update(&mut self, dt: f64) -> f64 {
-        debug_assert!(
-            dt.is_finite() && dt >= 0.0,
-            "dt must be finite and non-negative"
-        );
+    pub fn update(&mut self, delta: Duration) -> Duration {
+        self.samples.push(delta);
 
-        if !dt.is_finite() || dt < 0.0 {
-            return self.value;
-        }
-
-        if self.samples.is_empty() {
-            self.samples.push(dt);
-            self.sorted_samples.push(dt);
-            self.value = dt;
-
-            return self.value;
-        }
-
-        self.samples.push(dt);
-
-        if self.samples.len() > self.window_size {
+        if self.samples.len() > self.config.window_size().get() {
             self.samples.remove(0);
         }
 
         self.sorted_samples.clear();
         self.sorted_samples.extend(self.samples.iter().copied());
-        self.sorted_samples.sort_unstable_by(f64::total_cmp);
+        self.sorted_samples.sort_unstable();
 
-        let median = self.sorted_samples[self.sorted_samples.len() / 2];
+        let (start, end) = if self.sorted_samples.len() >= self.config.window_size().get() {
+            (
+                self.config.ignore_side_count,
+                self.config.ignore_side_count + self.config.average_count.get(),
+            )
+        } else {
+            (0, self.sorted_samples.len())
+        };
 
-        let alpha = 1.0 - (-dt / self.time_constant).exp();
+        let average = self.sorted_samples[start..end]
+            .iter()
+            .copied()
+            .sum::<Duration>()
+            / (end - start) as u32;
 
-        self.value += alpha * (median - self.value);
+        if self.config.time_constant == 0.0 {
+            self.value = average;
+        } else {
+            let delta_secs = average.as_secs_f64();
+            let alpha = 1.0 - (-delta_secs / self.config.time_constant).exp();
+
+            let current = self.value.as_secs_f64();
+            let target = average.as_secs_f64();
+
+            self.value = Duration::from_secs_f64(current + (alpha * (target - current)));
+        }
 
         self.value
     }
 
-    pub fn get(&self) -> f64 {
+    pub fn smoothed_delta(&self) -> Duration {
         self.value
     }
 
-    pub fn raw_delta_secs(&self) -> f64 {
+    pub fn raw_delta(&self) -> Duration {
         self.samples.last().copied().unwrap_or_default()
     }
 
-    pub fn samples(&self) -> &[f64] {
+    pub fn samples(&self) -> &[Duration] {
         &self.samples
     }
 
-    pub fn sorted_samples(&self) -> &[f64] {
+    pub fn sorted_samples(&self) -> &[Duration] {
         &self.sorted_samples
     }
 
-    pub fn window_size(&self) -> usize {
-        self.window_size
-    }
-
-    pub fn time_constant(&self) -> f64 {
-        self.time_constant
+    pub fn config(&self) -> &TimeSmoothingConfig {
+        &self.config
     }
 }

@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_mod_time_smoothing::{TimeSmoothing, TimeSmoothingPlugin};
+use bevy_mod_time_smoothing::prelude::*;
 
 fn main() {
     App::new()
@@ -18,6 +18,6 @@ fn log_delta_time(time: Res<Time>, time_smoothing: Res<TimeSmoothing>) {
     info!(
         "smoothed: {:.6} | raw: {:.6}",
         time.delta_secs_f64(),
-        time_smoothing.raw_delta_secs()
+        time_smoothing.raw_delta().as_secs_f64(),
     );
 }

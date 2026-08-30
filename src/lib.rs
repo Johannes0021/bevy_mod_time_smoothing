@@ -9,40 +9,36 @@ use bevy_ecs::{
 use bevy_log::warn;
 use bevy_time::{TimeReceiver, TimeSystems, TimeUpdateStrategy};
 use std::time::{Duration, Instant};
-
-pub use time_smoothing::TimeSmoothing;
+use time_smoothing::{TimeSmoothing, TimeSmoothingConfig};
 
 mod time_smoothing;
+
+pub mod prelude {
+    pub use crate::{
+        TimeSmoothingPlugin,
+        time_smoothing::{TimeSmoothing, TimeSmoothingConfig},
+    };
+}
+
+//==================================================================================================
+// TimeSmoothingPlugin
+//==================================================================================================
 
 /// Smooths Bevy's frame delta time.
 ///
 /// Runs before Bevy's time systems each frame and sets [`TimeUpdateStrategy::ManualDuration`] to
 /// the smoothed delta time.
-///
-/// See [`TimeSmoothing::new`] for configuration.
-pub struct TimeSmoothingPlugin {
-    pub window_size: usize,
-    pub time_constant: f64,
-}
-
-impl Default for TimeSmoothingPlugin {
-    fn default() -> Self {
-        Self {
-            window_size: 7,
-            time_constant: 0.1,
-        }
-    }
-}
+#[derive(Default)]
+pub struct TimeSmoothingPlugin(pub TimeSmoothingConfig);
 
 impl Plugin for TimeSmoothingPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(TimeSmoothing::new(self.window_size, self.time_constant))
-            .add_systems(
-                First,
-                (take_time_receiver, update_time_update_strategy)
-                    .chain()
-                    .before(TimeSystems),
-            );
+        app.insert_resource(TimeSmoothing::new(self.0)).add_systems(
+            First,
+            (take_time_receiver, update_time_update_strategy)
+                .chain()
+                .before(TimeSystems),
+        );
     }
 }
 
@@ -83,8 +79,7 @@ fn update_time_update_strategy(
     let instant = sent_time.unwrap_or_else(Instant::now);
 
     let smoothed_delta = if let Some(last_instant) = *last_instant {
-        let delta = instant - last_instant;
-        Duration::from_secs_f64(time_smoothing.update(delta.as_secs_f64()))
+        time_smoothing.update(instant - last_instant)
     } else {
         Duration::ZERO
     };
