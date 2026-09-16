@@ -124,7 +124,7 @@ impl TimeSmoothing {
         };
         self.smoothed = self.filtered_smoothed;
 
-        self.smoothed
+        self.smoothed_delta()
     }
 
     pub fn samples(&self) -> &[Duration] {
