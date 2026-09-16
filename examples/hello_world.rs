@@ -16,8 +16,8 @@ fn setup(mut commands: Commands) {
 
 fn log_delta_time(time: Res<Time>, time_smoothing: Res<TimeSmoothing>) {
     info!(
-        "smoothed: {:.6} | raw: {:.6}",
-        time.delta_secs_f64(),
+        "raw: {:.6} | smoothed: {:.6}",
         time_smoothing.raw_delta().as_secs_f64(),
+        time.delta_secs_f64(),
     );
 }

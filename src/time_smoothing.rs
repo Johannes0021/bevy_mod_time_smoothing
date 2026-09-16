@@ -15,6 +15,9 @@ pub struct TimeSmoothingConfig {
     pub ignore_side_count: usize,
     /// Controls how quickly the smoothed value reacts.
     pub time_constant: f64,
+    /// If set, intervals above this threshold are used as the raw smoothed delta time for the
+    /// current frame and are not added to the smoothing history.
+    pub delta_outlier_threshold: Option<Duration>,
 }
 
 impl Default for TimeSmoothingConfig {
@@ -23,6 +26,7 @@ impl Default for TimeSmoothingConfig {
             average_count: NonZeroUsize::new(6).unwrap(),
             ignore_side_count: 2,
             time_constant: 0.1,
+            delta_outlier_threshold: Some(Duration::from_millis(100)),
         }
     }
 }
@@ -42,6 +46,8 @@ pub struct TimeSmoothing {
     samples: Vec<Duration>,
     sorted_samples: Vec<Duration>,
     config: TimeSmoothingConfig,
+    raw: Duration,
+    filtered_smoothed: Duration,
     smoothed: Duration,
 }
 
@@ -53,11 +59,27 @@ impl TimeSmoothing {
             samples: Vec::with_capacity(window_size.get()),
             sorted_samples: Vec::with_capacity(window_size.get()),
             config,
+            raw: Duration::ZERO,
+            filtered_smoothed: Duration::ZERO,
             smoothed: Duration::ZERO,
         }
     }
 
     pub fn update(&mut self, delta: Duration) -> Duration {
+        self.raw = delta;
+
+        if self
+            .config
+            .delta_outlier_threshold
+            .is_some_and(|threshold| delta > threshold)
+            || self.samples.is_empty() && delta.is_zero()
+        {
+            self.smoothed = delta;
+            return self.raw_delta();
+        }
+
+        let startup_done = self.sorted_samples.len() >= self.config.window_size().get();
+
         self.samples.push(delta);
 
         if self.samples.len() > self.config.window_size().get() {
@@ -73,6 +95,12 @@ impl TimeSmoothing {
                 self.config.ignore_side_count,
                 self.config.ignore_side_count + self.config.average_count.get(),
             )
+        } else if self.sorted_samples.len() > self.config.average_count.get() {
+            let excess = self.sorted_samples.len() - self.config.average_count.get();
+            let ignore_left = excess / 2;
+            let ignore_right = excess - ignore_left;
+
+            (ignore_left, self.sorted_samples.len() - ignore_right)
         } else {
             (0, self.sorted_samples.len())
         };
@@ -83,27 +111,20 @@ impl TimeSmoothing {
             .sum::<Duration>()
             / (end - start) as u32;
 
-        if self.config.time_constant == 0.0 {
-            self.smoothed = average;
+        self.filtered_smoothed = if self.config.time_constant == 0.0 || !startup_done {
+            average
         } else {
             let delta_secs = average.as_secs_f64();
             let alpha = 1.0 - (-delta_secs / self.config.time_constant).exp();
 
-            let current = self.smoothed.as_secs_f64();
+            let current = self.filtered_smoothed.as_secs_f64();
             let target = average.as_secs_f64();
 
-            self.smoothed = Duration::from_secs_f64(current + (alpha * (target - current)));
-        }
+            Duration::from_secs_f64(current + (alpha * (target - current)))
+        };
+        self.smoothed = self.filtered_smoothed;
 
         self.smoothed
-    }
-
-    pub fn smoothed_delta(&self) -> Duration {
-        self.smoothed
-    }
-
-    pub fn raw_delta(&self) -> Duration {
-        self.samples.last().copied().unwrap_or_default()
     }
 
     pub fn samples(&self) -> &[Duration] {
@@ -116,5 +137,13 @@ impl TimeSmoothing {
 
     pub fn config(&self) -> &TimeSmoothingConfig {
         &self.config
+    }
+
+    pub fn raw_delta(&self) -> Duration {
+        self.raw
+    }
+
+    pub fn smoothed_delta(&self) -> Duration {
+        self.smoothed
     }
 }
