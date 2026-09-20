@@ -11,7 +11,7 @@ use bevy_time::{TimeReceiver, TimeSystems, TimeUpdateStrategy};
 use std::time::{Duration, Instant};
 use time_smoothing::{TimeSmoothing, TimeSmoothingConfig};
 
-mod time_smoothing;
+pub mod time_smoothing;
 
 pub mod prelude {
     pub use crate::{
