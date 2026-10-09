@@ -9,24 +9,24 @@ use bevy_ecs::resource::Resource;
 
 #[derive(Debug, Clone, Copy)]
 pub struct TimeSmoothingConfig {
+    /// If set, intervals above this threshold are used as the raw smoothed delta time for the
+    /// current frame and are not added to the smoothing history.
+    pub delta_outlier_threshold: Option<Duration>,
     /// Number of samples used to calculate the average.
     pub average_count: NonZeroUsize,
     /// Number of samples ignored on each side of the sorted samples.
     pub ignore_side_count: usize,
     /// Controls how quickly the smoothed value reacts.
     pub time_constant: f64,
-    /// If set, intervals above this threshold are used as the raw smoothed delta time for the
-    /// current frame and are not added to the smoothing history.
-    pub delta_outlier_threshold: Option<Duration>,
 }
 
 impl Default for TimeSmoothingConfig {
     fn default() -> Self {
         Self {
+            delta_outlier_threshold: Some(Duration::from_millis(100)),
             average_count: NonZeroUsize::new(6).unwrap(),
             ignore_side_count: 2,
             time_constant: 0.1,
-            delta_outlier_threshold: Some(Duration::from_millis(100)),
         }
     }
 }
@@ -43,9 +43,9 @@ impl TimeSmoothingConfig {
 
 #[derive(Resource, Debug, Clone)]
 pub struct TimeSmoothing {
+    config: TimeSmoothingConfig,
     samples: Vec<Duration>,
     sorted_samples: Vec<Duration>,
-    config: TimeSmoothingConfig,
     raw: Duration,
     filtered_smoothed: Duration,
     smoothed: Duration,
@@ -56,9 +56,9 @@ impl TimeSmoothing {
         let window_size = config.window_size();
 
         Self {
+            config,
             samples: Vec::with_capacity(window_size.get()),
             sorted_samples: Vec::with_capacity(window_size.get()),
-            config,
             raw: Duration::ZERO,
             filtered_smoothed: Duration::ZERO,
             smoothed: Duration::ZERO,
