@@ -16,7 +16,7 @@ pub mod time_smoothing;
 pub mod prelude {
     pub use crate::{
         TimeSmoothingPlugin,
-        time_smoothing::{TimeSmoothing, TimeSmoothingConfig},
+        time_smoothing::{DeltaOutlierPolicy, TimeSmoothing, TimeSmoothingConfig},
     };
 }
 
