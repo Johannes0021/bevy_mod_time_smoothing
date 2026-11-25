@@ -9,9 +9,8 @@ use bevy_ecs::resource::Resource;
 
 #[derive(Debug, Clone, Copy)]
 pub struct TimeSmoothingConfig {
-    /// If set, intervals above this threshold are used as the raw smoothed delta time for the
-    /// current frame and are not added to the smoothing history.
-    pub delta_outlier_threshold: Option<Duration>,
+    /// Defines how to handle delta time outliers.
+    pub delta_outlier_policy: DeltaOutlierPolicy,
     /// Number of samples used to calculate the average.
     pub average_count: NonZeroUsize,
     /// Number of samples ignored on each side of the sorted samples.
@@ -23,7 +22,10 @@ pub struct TimeSmoothingConfig {
 impl Default for TimeSmoothingConfig {
     fn default() -> Self {
         Self {
-            delta_outlier_threshold: Some(Duration::from_millis(100)),
+            delta_outlier_policy: DeltaOutlierPolicy::Ignore {
+                threshold: Duration::from_millis(100),
+                fallback_smoothed_delta: Duration::from_secs_f64(1.0 / 60.0),
+            },
             average_count: NonZeroUsize::new(6).unwrap(),
             ignore_side_count: 2,
             time_constant: 0.1,
@@ -35,6 +37,27 @@ impl TimeSmoothingConfig {
     pub fn window_size(&self) -> NonZeroUsize {
         NonZeroUsize::new(self.average_count.get() + (self.ignore_side_count * 2)).unwrap()
     }
+}
+
+//==================================================================================================
+// DeltaOutlierThreshold
+//==================================================================================================
+
+#[derive(Debug, Clone, Copy)]
+pub enum DeltaOutlierPolicy {
+    None,
+    /// Intervals above this threshold are ignored. The smoothed delta time from the current
+    /// smoothing history is returned for the current frame. If there is no smoothing history
+    /// `fallback_smoothed_delta` is returned.
+    Ignore {
+        threshold: Duration,
+        fallback_smoothed_delta: Duration,
+    },
+    /// Intervals above this threshold are used as the raw smoothed delta time for the current frame
+    /// and are not added to the smoothing history.
+    IgnoreAndUseRaw {
+        threshold: Duration,
+    },
 }
 
 //==================================================================================================
@@ -68,13 +91,22 @@ impl TimeSmoothing {
     pub fn update(&mut self, delta: Duration) -> Duration {
         self.raw = delta;
 
-        if self
-            .config
-            .delta_outlier_threshold
-            .is_some_and(|threshold| delta > threshold)
-            || self.samples.is_empty() && delta.is_zero()
-        {
-            self.smoothed = delta;
+        let (ignore, fallback_smoothed) = match self.config.delta_outlier_policy {
+            DeltaOutlierPolicy::None => (false, delta),
+            DeltaOutlierPolicy::Ignore {
+                threshold,
+                fallback_smoothed_delta,
+            } => {
+                let ignore = delta > threshold;
+                (ignore, fallback_smoothed_delta)
+            }
+            DeltaOutlierPolicy::IgnoreAndUseRaw { threshold } => {
+                let ignore = delta > threshold;
+                (ignore, delta)
+            }
+        };
+        if ignore || (self.samples.is_empty() && delta.is_zero()) {
+            self.smoothed = fallback_smoothed;
             return self.raw_delta();
         }
 
