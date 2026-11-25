@@ -98,7 +98,12 @@ impl TimeSmoothing {
                 fallback_smoothed_delta,
             } => {
                 let ignore = delta > threshold;
-                (ignore, fallback_smoothed_delta)
+                let fallback_smoothed = if self.samples.is_empty() {
+                    fallback_smoothed_delta
+                } else {
+                    self.smoothed_delta()
+                };
+                (ignore, fallback_smoothed)
             }
             DeltaOutlierPolicy::IgnoreAndUseRaw { threshold } => {
                 let ignore = delta > threshold;
