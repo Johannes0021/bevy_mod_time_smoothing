@@ -112,7 +112,7 @@ impl TimeSmoothing {
         };
         if ignore || (self.samples.is_empty() && delta.is_zero()) {
             self.smoothed = fallback_smoothed;
-            return self.raw_delta();
+            return self.smoothed_delta();
         }
 
         let startup_done = self.sorted_samples.len() >= self.config.window_size().get();
